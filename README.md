@@ -1,1 +1,1 @@
-# FreightPoweAI
+# FreightPowerAI
