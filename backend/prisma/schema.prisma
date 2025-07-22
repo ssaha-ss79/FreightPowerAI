@@ -1,0 +1,165 @@
+// Prisma schema for SQLite DB
+// Defines all tables as per the low-level design
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id         String   @id @default(uuid())
+  email      String   @unique
+  name       String
+  role       String
+  password   String
+  created_at String
+  drivers    Driver[]
+  sentMessages     DispatchMessage[] @relation("SentMessages")
+  receivedMessages DispatchMessage[] @relation("ReceivedMessages")
+}
+
+model Driver {
+  id          String   @id
+  vehicle_id  String?
+  preferences String?
+  user        User     @relation(fields: [id], references: [id])
+  vehicle     Vehicle? @relation(fields: [vehicle_id], references: [id])
+  trips       Trip[]
+  alerts      Alert[]
+  checkinLogs CheckinCheckoutLog[]
+  notifications Notification[]
+  documents   Document[]
+  emergencyLogs EmergencyLog[]
+  bookedLoads Load[] @relation("DriverBookedLoads")
+}
+
+model Vehicle {
+  id               String   @id
+  make             String
+  model            String
+  year             Int
+  license_plate    String   @unique
+  telemetry_enabled Boolean
+  drivers          Driver[]
+  telemetryLogs    VehicleTelemetryLog[]
+}
+
+model Load {
+  id                  String   @id
+  origin_location     String
+  destination_location String
+  payload_description String
+  payout_amount       Float
+  status              String
+  booked_by_driver_id String?
+  booked_at           String?
+  created_at          String
+  driver              Driver?  @relation("DriverBookedLoads", fields: [booked_by_driver_id], references: [id])
+  trips               Trip[]
+}
+
+model Trip {
+  id                    String   @id
+  driver_id             String
+  load_id               String
+  start_time            String
+  end_time              String?
+  current_location      String
+  route_polyline        String
+  estimated_arrival_time String
+  status                String
+  created_at            String
+  driver                Driver   @relation(fields: [driver_id], references: [id])
+  load                  Load     @relation(fields: [load_id], references: [id])
+  alerts                Alert[]
+  checkinLogs           CheckinCheckoutLog[]
+  documents             Document[]
+}
+
+model VehicleTelemetryLog {
+  id             String   @id
+  vehicle_id     String
+  timestamp      String
+  fuel_level_percent Float
+  odometer_km    Float
+  latitude       Float
+  longitude      Float
+  speed_kph      Float
+  vehicle        Vehicle  @relation(fields: [vehicle_id], references: [id])
+}
+
+model Alert {
+  id          String   @id
+  type        String
+  description String
+  location    String
+  severity    String
+  triggered_at String
+  driver_id   String?
+  trip_id     String?
+  status      String
+  driver      Driver?  @relation(fields: [driver_id], references: [id])
+  trip        Trip?    @relation(fields: [trip_id], references: [id])
+}
+
+model CheckinCheckoutLog {
+  id        String   @id
+  driver_id String
+  trip_id   String?
+  type      String
+  location  String
+  timestamp String
+  driver    Driver   @relation(fields: [driver_id], references: [id])
+  trip      Trip?    @relation(fields: [trip_id], references: [id])
+}
+
+model Notification {
+  id              String   @id
+  driver_id       String
+  message_content String
+  source_system   String
+  status          String
+  received_at     String
+  driver          Driver   @relation(fields: [driver_id], references: [id])
+}
+
+model Document {
+  id         String   @id
+  driver_id  String
+  trip_id    String?
+  type       String
+  filename   String
+  storage_url String
+  tags       String
+  uploaded_at String
+  driver     Driver   @relation(fields: [driver_id], references: [id])
+  trip       Trip?    @relation(fields: [trip_id], references: [id])
+}
+
+model DispatchMessage {
+  id           String   @id
+  sender_id    String
+  receiver_id  String
+  message_type String
+  content_url  String?
+  text_content String?
+  timestamp    String
+  status       String
+  sender       User     @relation("SentMessages", fields: [sender_id], references: [id])
+  receiver     User     @relation("ReceivedMessages", fields: [receiver_id], references: [id])
+}
+
+model EmergencyLog {
+  id                   String   @id
+  driver_id            String
+  timestamp            String
+  location             String
+  vehicle_data_snapshot String
+  status               String
+  notes                String?
+  driver               Driver   @relation(fields: [driver_id], references: [id])
+}
