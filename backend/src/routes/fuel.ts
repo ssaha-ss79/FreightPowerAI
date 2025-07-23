@@ -3,7 +3,7 @@ import * as fuelController from '../controllers/fuelController';
 
 const fuelRouter = express.Router();
 
-fuelRouter.get('/:vehicle_id/status', fuelController.getFuelStatus);
-fuelRouter.get('/stations/nearby', fuelController.findNearestFuelStation);
+fuelRouter.get('/status', fuelController.getFuelStatus);
+fuelRouter.get('/nearest-station', fuelController.findNearestFuelStation);
 
 export default fuelRouter;

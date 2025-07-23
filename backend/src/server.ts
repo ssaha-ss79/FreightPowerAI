@@ -56,7 +56,7 @@ app.use('/api/v1/telemetry', telemetryRoutes);
 // Alerts routes
 app.use('/api/v1/alerts', alertsRoutes);
 // Check-in/out routes
-app.use('/api/v1', checkinRoutes);
+app.use('/api/v1/checkin', checkinRoutes);
 // Notifications routes
 app.use('/api/v1/notifications', notificationsRoutes);
 // Documents routes

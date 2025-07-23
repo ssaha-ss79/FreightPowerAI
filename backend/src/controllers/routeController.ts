@@ -46,17 +46,21 @@ const planRoute = async (req: Request, res: Response) => {
 
 const getRouteStatus = async (req: Request, res: Response) => {
   try {
-    const { trip_id } = req.params;
+    const { trip_id } = req.query;
     console.log('[ROUTE] getRouteStatus called for trip:', trip_id);
     
-    const trip = await prisma.trip.findUnique({ where: { id: trip_id } });
+    if (!trip_id) {
+      return res.status(400).json({ error: 'trip_id query parameter required' });
+    }
+    
+    const trip = await prisma.trip.findUnique({ where: { id: trip_id as string } });
     if (!trip) {
       return res.status(404).json({ error: 'Trip not found' });
     }
     
     // Simulate current route status
     const routeStatus = {
-      trip_id,
+      trip_id: trip_id as string,
       current_location: trip.current_location,
       estimated_arrival_time: trip.estimated_arrival_time,
       distance_remaining_km: Math.floor(Math.random() * 200) + 50,

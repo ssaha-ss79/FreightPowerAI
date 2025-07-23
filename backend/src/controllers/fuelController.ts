@@ -5,23 +5,23 @@ const prisma = new PrismaClient();
 // Fuel Monitoring Service
 const getFuelStatus = async (req: Request, res: Response) => {
   try {
-    const { vehicle_id } = req.params;
+    const { vehicle_id } = req.query;
     console.log('[FUEL] getFuelStatus called for vehicle:', vehicle_id);
     
     if (!vehicle_id) {
-      return res.status(400).json({ error: 'Vehicle ID required' });
+      return res.status(400).json({ error: 'Vehicle ID query parameter required' });
     }
     
     // Get latest telemetry data for the vehicle
     const latestTelemetry = await prisma.vehicleTelemetryLog.findFirst({
-      where: { vehicle_id },
+      where: { vehicle_id: vehicle_id as string },
       orderBy: { timestamp: 'desc' }
     });
     
     if (!latestTelemetry) {
       // Simulate fuel data if no telemetry exists
       const simulatedFuelData = {
-        vehicle_id,
+        vehicle_id: vehicle_id as string,
         fuel_level_percent: Math.floor(Math.random() * 80) + 20, // 20-100%
         estimated_range_km: Math.floor(Math.random() * 400) + 100,
         fuel_efficiency_kmpl: 12.5 + Math.random() * 5, // 12.5-17.5 km/l
@@ -37,7 +37,7 @@ const getFuelStatus = async (req: Request, res: Response) => {
     }
     
     const fuelStatus = {
-      vehicle_id,
+      vehicle_id: vehicle_id as string,
       fuel_level_percent: latestTelemetry.fuel_level_percent,
       estimated_range_km: Math.floor(latestTelemetry.fuel_level_percent * 8), // Rough calculation
       fuel_efficiency_kmpl: 12.5 + Math.random() * 5,
