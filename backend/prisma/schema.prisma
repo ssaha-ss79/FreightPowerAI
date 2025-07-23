@@ -38,7 +38,7 @@ model Driver {
 }
 
 model Vehicle {
-  id               String   @id
+  id               String   @id @default(uuid())
   make             String
   model            String
   year             Int
@@ -49,7 +49,7 @@ model Vehicle {
 }
 
 model Load {
-  id                  String   @id
+  id                  String   @id @default(uuid())
   origin_location     String
   destination_location String
   payload_description String
@@ -63,7 +63,7 @@ model Load {
 }
 
 model Trip {
-  id                    String   @id
+  id                    String   @id @default(uuid())
   driver_id             String
   load_id               String
   start_time            String
@@ -81,7 +81,7 @@ model Trip {
 }
 
 model VehicleTelemetryLog {
-  id             String   @id
+  id             String   @id @default(uuid())
   vehicle_id     String
   timestamp      String
   fuel_level_percent Float
@@ -93,7 +93,7 @@ model VehicleTelemetryLog {
 }
 
 model Alert {
-  id          String   @id
+  id          String   @id @default(uuid())
   type        String
   description String
   location    String
@@ -107,7 +107,7 @@ model Alert {
 }
 
 model CheckinCheckoutLog {
-  id        String   @id
+  id        String   @id @default(uuid())
   driver_id String
   trip_id   String?
   type      String
@@ -118,7 +118,7 @@ model CheckinCheckoutLog {
 }
 
 model Notification {
-  id              String   @id
+  id              String   @id @default(uuid())
   driver_id       String
   message_content String
   source_system   String
@@ -128,7 +128,7 @@ model Notification {
 }
 
 model Document {
-  id         String   @id
+  id         String   @id @default(uuid())
   driver_id  String
   trip_id    String?
   type       String
@@ -141,7 +141,7 @@ model Document {
 }
 
 model DispatchMessage {
-  id           String   @id
+  id           String   @id @default(uuid())
   sender_id    String
   receiver_id  String
   message_type String
@@ -154,7 +154,7 @@ model DispatchMessage {
 }
 
 model EmergencyLog {
-  id                   String   @id
+  id                   String   @id @default(uuid())
   driver_id            String
   timestamp            String
   location             String

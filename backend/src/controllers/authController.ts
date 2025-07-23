@@ -27,7 +27,16 @@ const login = async (req: Request, res: Response) => {
   }
   // Issue JWT
   const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '12h' });
-  res.json({ token, user: { ...user, password: undefined } });
+  // res.json({ token, user: { ...user, password: undefined } });
+  const safeUser = {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    created_at: user.created_at
+    // add any other fields you want to expose
+  };
+  res.json({ token, user: safeUser });
 };
 
 export { login };

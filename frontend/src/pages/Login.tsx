@@ -21,6 +21,7 @@ const Login: React.FC = () => {
       });
       localStorage.setItem('token', data.token);
       localStorage.setItem('role', data.user.role);
+      localStorage.setItem('user_id', data.user.id); // Ensure user_id is set for downstream features
       navigate('/dashboard');
     } catch (err: any) {
       setError(err.message || 'Login failed. Please try again.');

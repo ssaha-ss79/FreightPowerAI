@@ -13,6 +13,8 @@ import notificationsRoutes from './routes/notifications';
 import documentsRoutes from './routes/documents';
 import dispatchRoutes from './routes/dispatch';
 import emergencyRoutes from './routes/emergency';
+import routeRoutes from './routes/route';
+import fuelRoutes from './routes/fuel';
 const { authenticateToken } = require('./middleware/auth');
 const errorHandler = require('./middleware/errorHandler');
 const { initSocket } = require('./websocket/socket');
@@ -43,10 +45,14 @@ app.use(authenticateToken);
 // ...existing code...
 // Loads routes
 app.use('/api/v1/loads', loadsRoutes);
+// Route navigation routes
+app.use('/api/v1/route', routeRoutes);
+// Fuel monitoring routes  
+app.use('/api/v1/fuel', fuelRoutes);
 // Trips routes
-app.use('/api/v1/route', tripsRoutes);
+app.use('/api/v1/trips', tripsRoutes);
 // Telemetry routes
-app.use('/api/v1/fuel', telemetryRoutes);
+app.use('/api/v1/telemetry', telemetryRoutes);
 // Alerts routes
 app.use('/api/v1/alerts', alertsRoutes);
 // Check-in/out routes

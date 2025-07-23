@@ -1,6 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { apiRequest } from '../utils/api';
 
+// Custom hook to force re-render on localStorage changes (user_id/role), with polling fallback
+function useLocalStorage(keys: string[]) {
+  const [, setVersion] = useState(0);
+  useEffect(() => {
+    const handler = (e: StorageEvent) => {
+      if (keys.includes(e.key || '')) setVersion(v => v + 1);
+    };
+    window.addEventListener('storage', handler);
+    return () => window.removeEventListener('storage', handler);
+  }, [keys]);
+  // Also force re-render on mount in case localStorage was set in this tab
+  useEffect(() => { setVersion(v => v + 1); }, []);
+  // Polling fallback for same-tab localStorage changes
+  useEffect(() => {
+    let prevVals = keys.map(k => localStorage.getItem(k));
+    const interval = setInterval(() => {
+      const currVals = keys.map(k => localStorage.getItem(k));
+      if (currVals.some((v, i) => v !== prevVals[i])) {
+        setVersion(v => v + 1);
+        prevVals = currVals;
+      }
+    }, 500);
+    return () => clearInterval(interval);
+  }, [keys]);
+}
+
 interface Load {
   id: string;
   origin_location: string;
@@ -9,13 +35,56 @@ interface Load {
   payout_amount: number;
   status: string;
   created_at: string;
+  booked_by_driver_id?: string | null;
+  booked_at?: string | null;
 }
 
 const LoadManagement: React.FC = () => {
+  // Force re-render when user_id or role changes
+  useLocalStorage(['user_id', 'role']);
+  // Debug: log user_id and role on every render
+  const userId = localStorage.getItem('user_id') || '';
+  const userRole = localStorage.getItem('role') || '';
+  console.log('[LoadManagement] Render: user_id =', userId, ', role =', userRole);
+  console.log('[LoadManagement] Add Load button visible check:', userRole === 'dispatcher' || userRole === 'admin', '(dispatcher check:', userRole === 'dispatcher', ', admin check:', userRole === 'admin', ')');
+  const handleAddLoad = async () => {
+    console.log('[LoadManagement] handleAddLoad: user_id =', userId, ', role =', userRole);
+    try {
+      if (!newLoad.origin_location || !newLoad.destination_location || !newLoad.payload_description || !newLoad.payout_amount) {
+        alert('Please fill in all fields');
+        return;
+      }
+      await apiRequest('/api/v1/loads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...newLoad,
+          payout_amount: parseFloat(newLoad.payout_amount),
+        }),
+      });
+      setShowAddModal(false);
+      setNewLoad({ origin_location: '', destination_location: '', payload_description: '', payout_amount: '' });
+      loadAvailableLoads();
+      alert('Load added successfully!');
+    } catch (error) {
+      console.error('Failed to add load:', error);
+      alert('Failed to add load. Please try again.');
+    }
+  };
   const [loads, setLoads] = useState<Load[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('available');
   const [searchLocation, setSearchLocation] = useState('');
+  const [selectedLoad, setSelectedLoad] = useState<Load | null>(null);
+
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newLoad, setNewLoad] = useState({
+    origin_location: '',
+    destination_location: '',
+    payload_description: '',
+    payout_amount: '',
+  });
+
 
   useEffect(() => {
     loadAvailableLoads();
@@ -24,7 +93,7 @@ const LoadManagement: React.FC = () => {
   const loadAvailableLoads = async () => {
     try {
       setLoading(true);
-      const data = await apiRequest(`/api/v1/loads?status=${filter}`);
+      const data = await apiRequest(`/api/v1/loads/available?status=${filter}`);
       setLoads(data);
     } catch (error) {
       console.error('Failed to load loads:', error);
@@ -34,34 +103,49 @@ const LoadManagement: React.FC = () => {
   };
 
   const bookLoad = async (loadId: string) => {
+    const userId = localStorage.getItem('user_id') || '';
+    console.log('[LoadManagement] bookLoad: user_id =', userId);
     try {
+      if (!userId) {
+        console.warn('[LoadManagement] bookLoad: user_id missing after login!');
+        alert('User ID not found. Please log in again.');
+        return;
+      }
       await apiRequest(`/api/v1/loads/${loadId}/book`, {
         method: 'POST',
-        body: JSON.stringify({ driver_id: 'current_driver' })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ driver_id: userId })
       });
-      
-      // Refresh loads
       loadAvailableLoads();
-      
-      // Speak confirmation
       if ('speechSynthesis' in window) {
         const utterance = new SpeechSynthesisUtterance('Load booked successfully!');
         speechSynthesis.speak(utterance);
       }
     } catch (error) {
       console.error('Failed to book load:', error);
+      if (error instanceof Error && error.message.includes('Driver not found')) {
+        alert('Driver record not found. Please contact support or re-register as a driver.');
+      } else {
+        alert('Failed to book load. Please try again.');
+      }
     }
   };
 
   const cancelLoad = async (loadId: string) => {
+    const userId = localStorage.getItem('user_id') || '';
+    console.log('[LoadManagement] cancelLoad: user_id =', userId);
     try {
+      if (!userId) {
+        console.warn('[LoadManagement] cancelLoad: user_id missing after login!');
+        alert('User ID not found. Please log in again.');
+        return;
+      }
       await apiRequest(`/api/v1/loads/${loadId}/cancel`, {
         method: 'POST',
-        body: JSON.stringify({ driver_id: 'current_driver' })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ driver_id: userId })
       });
-      
       loadAvailableLoads();
-      
       if ('speechSynthesis' in window) {
         const utterance = new SpeechSynthesisUtterance('Load cancelled successfully!');
         speechSynthesis.speak(utterance);
@@ -140,12 +224,84 @@ const LoadManagement: React.FC = () => {
               load={load}
               onBook={() => bookLoad(load.id)}
               onCancel={() => cancelLoad(load.id)}
+              onDetails={() => setSelectedLoad(load)}
             />
           ))
         )}
       </div>
+
+      {/* Load Details Modal */}
+      {selectedLoad && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white rounded-lg p-8 max-w-md w-full relative">
+            <button className="absolute top-2 right-2 text-gray-500 hover:text-gray-700" onClick={() => setSelectedLoad(null)}>
+              ✖️
+            </button>
+            <h2 className="text-2xl font-bold mb-4">Load Details</h2>
+            <div className="mb-2"><b>ID:</b> {selectedLoad.id}</div>
+            <div className="mb-2"><b>Origin:</b> {selectedLoad.origin_location}</div>
+            <div className="mb-2"><b>Destination:</b> {selectedLoad.destination_location}</div>
+            <div className="mb-2"><b>Description:</b> {selectedLoad.payload_description}</div>
+            <div className="mb-2"><b>Payout:</b> ₹{(selectedLoad.payout_amount * 83).toLocaleString('en-IN')}</div>
+            <div className="mb-2"><b>Status:</b> {selectedLoad.status}</div>
+            <div className="mb-2"><b>Created At:</b> {new Date(selectedLoad.created_at).toLocaleString()}</div>
+            {selectedLoad.booked_by_driver_id && (
+              <div className="mb-2"><b>Booked By:</b> {selectedLoad.booked_by_driver_id}</div>
+            )}
+            {selectedLoad.booked_at && (
+              <div className="mb-2"><b>Booked At:</b> {new Date(selectedLoad.booked_at).toLocaleString()}</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Add Load Button (role-based) */}
+      {(userRole === 'dispatcher' || userRole === 'admin') && (
+        <div className="flex justify-end">
+          <button
+            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium mb-2"
+            onClick={() => {
+              console.log('[LoadManagement] Add Load button clicked: user_id =', userId, ', role =', userRole);
+              setShowAddModal(true);
+            }}
+          >
+            ➕ Add Load
+          </button>
+        </div>
+      )}
+      {/* Add Load Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white rounded-lg p-8 max-w-md w-full relative">
+            <button className="absolute top-2 right-2 text-gray-500 hover:text-gray-700" onClick={() => setShowAddModal(false)}>
+              ✖️
+            </button>
+            <h2 className="text-2xl font-bold mb-4">Add New Load</h2>
+            <div className="mb-2">
+              <label className="block font-medium mb-1">Origin</label>
+              <input className="w-full border px-2 py-1 rounded" value={newLoad.origin_location} onChange={e => setNewLoad({ ...newLoad, origin_location: e.target.value })} />
+            </div>
+            <div className="mb-2">
+              <label className="block font-medium mb-1">Destination</label>
+              <input className="w-full border px-2 py-1 rounded" value={newLoad.destination_location} onChange={e => setNewLoad({ ...newLoad, destination_location: e.target.value })} />
+            </div>
+            <div className="mb-2">
+              <label className="block font-medium mb-1">Description</label>
+              <input className="w-full border px-2 py-1 rounded" value={newLoad.payload_description} onChange={e => setNewLoad({ ...newLoad, payload_description: e.target.value })} />
+            </div>
+            <div className="mb-4">
+              <label className="block font-medium mb-1">Payout Amount</label>
+              <input type="number" className="w-full border px-2 py-1 rounded" value={newLoad.payout_amount} onChange={e => setNewLoad({ ...newLoad, payout_amount: e.target.value })} />
+            </div>
+            <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-medium" onClick={handleAddLoad}>
+              Add Load
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
+      {/* Removed duplicate Add Load button/modal at the end */}
 };
 
 // Load Card Component
@@ -153,7 +309,8 @@ const LoadCard: React.FC<{
   load: Load;
   onBook: () => void;
   onCancel: () => void;
-}> = ({ load, onBook, onCancel }) => {
+  onDetails: () => void;
+}> = ({ load, onBook, onCancel, onDetails }) => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'available': return 'text-green-400 bg-green-400/10';
@@ -177,7 +334,8 @@ const LoadCard: React.FC<{
           <p className="text-gray-300 mb-4">{load.payload_description}</p>
         </div>
         <div className="text-right">
-          <div className="text-2xl font-bold text-green-400">${load.payout_amount.toLocaleString()}</div>
+          <div className="text-2xl font-bold text-green-400">₹{(load.payout_amount * 83).toLocaleString('en-IN')}</div>
+          <div className="text-xs text-gray-400">(Approx. ₹1 = $0.012)</div>
           <div className="text-sm text-gray-400">Payout</div>
         </div>
       </div>
@@ -227,7 +385,7 @@ const LoadCard: React.FC<{
               </button>
             </>
           )}
-          <button className="bg-slate-600 hover:bg-slate-500 text-white px-4 py-2 rounded-lg transition-colors font-medium">
+          <button className="bg-slate-600 hover:bg-slate-500 text-white px-4 py-2 rounded-lg transition-colors font-medium" onClick={onDetails}>
             ℹ️ Details
           </button>
         </div>

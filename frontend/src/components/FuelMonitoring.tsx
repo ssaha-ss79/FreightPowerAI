@@ -223,7 +223,7 @@ const FuelMonitoring: React.FC = () => {
       <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-6 border border-blue-500/20">
         <h3 className="text-xl font-bold text-white mb-4">Nearby Fuel Stations</h3>
         <div className="space-y-4">
-          {nearbyStations.map((station, index) => (
+          {(Array.isArray(nearbyStations) ? nearbyStations : []).map((station, index) => (
             <FuelStationCard
               key={index}
               station={station}
@@ -286,7 +286,7 @@ const FuelStationCard: React.FC<{
           </div>
           {/* Amenities */}
           <div className="flex flex-wrap gap-2 mt-3">
-            {station.amenities.map((amenity, index) => (
+            {(Array.isArray(station.amenities) ? station.amenities : []).map((amenity, index) => (
               <span
                 key={index}
                 className="bg-blue-500/20 text-blue-200 px-2 py-1 rounded text-xs"

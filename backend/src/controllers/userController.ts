@@ -23,9 +23,24 @@ const register = async (req: Request, res: Response) => {
   const user = await prisma.user.create({
     data: { email, name, role, password: hashed, created_at: new Date().toISOString() }
   });
+  
+  // Create Driver record if user role is 'driver'
+  if (role === 'driver') {
+    await prisma.driver.create({
+      data: { id: user.id }
+    });
+  }
+  
   // Issue JWT after registration
   const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '12h' });
-  res.status(201).json({ token, user: { ...user, password: undefined } });
+  const safeUser = {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    created_at: user.created_at
+  };
+  res.status(201).json({ token, user: safeUser });
 };
 
 const getUserProfile = async (req: AuthRequest, res: Response) => {

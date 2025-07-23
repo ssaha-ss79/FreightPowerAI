@@ -3,9 +3,14 @@ import { apiRequest } from '../../utils/api';
 
 interface Load {
   id: string;
-  origin: string;
-  destination: string;
+  origin_location: string;
+  destination_location: string;
+  payload_description: string;
+  payout_amount: number;
   status: string;
+  booked_by_driver_id?: string | null;
+  booked_at?: string | null;
+  created_at: string;
 }
 
 const LoadsTrips: React.FC = () => {
@@ -15,8 +20,8 @@ const LoadsTrips: React.FC = () => {
 
   useEffect(() => {
     setLoading(true);
-    apiRequest('/api/v1/loads')
-      .then(data => setLoads(data.loads || []))
+    apiRequest('/api/v1/loads/available')
+      .then(data => setLoads(data || []))
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -29,8 +34,8 @@ const LoadsTrips: React.FC = () => {
       <ul>
         {loads.map(load => (
           <li key={load.id} className="mb-2 p-2 border rounded">
-            <div><span className="font-semibold">Origin:</span> {load.origin}</div>
-            <div><span className="font-semibold">Destination:</span> {load.destination}</div>
+            <div><span className="font-semibold">Origin:</span> {load.origin_location}</div>
+            <div><span className="font-semibold">Destination:</span> {load.destination_location}</div>
             <div><span className="font-semibold">Status:</span> {load.status}</div>
           </li>
         ))}
