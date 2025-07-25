@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { apiRequest } from '../utils/api';
+import { geocodeAddress, calculateDistance } from '../utils/geocoding';
 
 // Fix for default markers in react-leaflet
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -47,17 +48,123 @@ const NavigationView: React.FC = () => {
       );
     }
 
-    // Load active route if any
-    loadActiveRoute();
+    // Function to handle navigation trigger
+    const handleNavigationTrigger = () => {
+      const navigationData = localStorage.getItem('navigationData');
+      if (navigationData) {
+        try {
+          const { trip, load, isManualNavigation, destinationCoords } = JSON.parse(navigationData);
+          console.log('Navigation data found:', { trip, load, isManualNavigation });
+          if (isManualNavigation && destinationCoords) {
+            startManualNavigation(destinationCoords, load.destination_location);
+          } else {
+            startNavigationWithTrip(trip, load);
+          }
+          localStorage.removeItem('navigationData');
+        } catch (error) {
+          console.error('Error parsing navigation data:', error);
+        }
+      }
+    };
+
+    // Initial check on mount
+    handleNavigationTrigger();
+
+    // Listen for startNavigation event
+    window.addEventListener('startNavigation', handleNavigationTrigger);
+    return () => {
+      window.removeEventListener('startNavigation', handleNavigationTrigger);
+    };
   }, []);
 
   const loadActiveRoute = async () => {
     try {
-      const routeData = await apiRequest('/api/v1/route/active');
-      setRoute(routeData);
-      setIsNavigating(true);
+      // Since there's no active route endpoint, we'll skip this for now
+      console.log('No active route endpoint available');
     } catch (error) {
       console.error('No active route found:', error);
+    }
+  };
+
+  const startManualNavigation = (destinationCoords: { lat: number; lng: number }, destinationName: string) => {
+    if (!currentLocation) {
+      alert('Current location not available');
+      return;
+    }
+
+    const distance = calculateDistance(
+      { lat: currentLocation.lat, lng: currentLocation.lon },
+      destinationCoords
+    );
+
+    const manualRoute: Route = {
+      id: 'manual_' + Date.now(),
+      origin: currentLocation,
+      destination: { lat: destinationCoords.lat, lon: destinationCoords.lng },
+      waypoints: [
+        { lat: currentLocation.lat, lon: currentLocation.lon },
+        { lat: destinationCoords.lat, lon: destinationCoords.lng }
+      ],
+      distance: distance,
+      eta: new Date(Date.now() + distance * 2 * 60 * 1000).toISOString(),
+      traffic_alerts: []
+    };
+
+    setRoute(manualRoute);
+    setIsNavigating(true);
+    setNextInstruction(`Navigate to ${destinationName}`);
+
+    console.log('Manual navigation started to:', destinationName);
+  };
+
+  const startNavigationWithTrip = async (trip: any, load: any) => {
+    if (!currentLocation) {
+      alert('Current location not available');
+      return;
+    }
+
+    try {
+      // Geocode the destination to get real coordinates
+      const destinationCoords = await geocodeAddress(load.destination_location);
+      
+      if (!destinationCoords) {
+        alert('Could not find destination coordinates');
+        return;
+      }
+
+      // Plan route using the backend endpoint
+      const routeData = await apiRequest('/api/v1/route/plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          origin: currentLocation,
+          destination: destinationCoords,
+          trip_id: trip.id
+        })
+      });
+
+      // Transform the backend response to match our Route interface
+      const transformedRoute: Route = {
+        id: trip.id,
+        origin: currentLocation,
+        destination: { lat: destinationCoords.lat, lon: destinationCoords.lng },
+        waypoints: [],
+        distance: routeData.route?.distance_km || calculateDistance(
+          { lat: currentLocation.lat, lng: currentLocation.lon },
+          destinationCoords
+        ),
+        eta: routeData.route?.estimated_arrival_time || new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+        traffic_alerts: []
+      };
+
+      setRoute(transformedRoute);
+      setIsNavigating(true);
+      setNextInstruction(`Navigate to ${load.destination_location}`);
+      
+      console.log('Navigation started successfully with real coordinates');
+    } catch (error) {
+      console.error('Failed to start navigation:', error);
+      alert('Failed to start navigation. Please try again.');
     }
   };
 
@@ -68,26 +175,45 @@ const NavigationView: React.FC = () => {
     }
 
     try {
-      const routeData = await apiRequest('/api/v1/route/plan', {
-        method: 'POST',
-        body: JSON.stringify({
-          origin: currentLocation,
-          destination: { address: destination },
-          driver_preferences: { avoid_tolls: false }
-        })
-      });
+      // Geocode the destination to get real coordinates
+      const destinationCoords = await geocodeAddress(destination);
+      
+      if (!destinationCoords) {
+        alert('Could not find destination coordinates');
+        return;
+      }
 
-      setRoute(routeData);
+      // Create a simple route without backend trip creation
+      const distance = calculateDistance(
+        { lat: currentLocation.lat, lng: currentLocation.lon },
+        destinationCoords
+      );
+
+      const simpleRoute: Route = {
+        id: 'manual_' + Date.now(),
+        origin: currentLocation,
+        destination: { lat: destinationCoords.lat, lon: destinationCoords.lng },
+        waypoints: [
+          { lat: currentLocation.lat, lon: currentLocation.lon },
+          { lat: destinationCoords.lat, lon: destinationCoords.lng }
+        ],
+        distance: distance,
+        eta: new Date(Date.now() + distance * 2 * 60 * 1000).toISOString(), // Rough estimate: 2 min per km
+        traffic_alerts: []
+      };
+
+      setRoute(simpleRoute);
       setIsNavigating(true);
-      setNextInstruction('Navigate to your destination');
+      setNextInstruction(`Navigate to ${destination}`);
 
       // Voice feedback
       if ('speechSynthesis' in window) {
-        const utterance = new SpeechSynthesisUtterance(`Navigation started to ${destination}. ETA is ${routeData.eta}`);
+        const utterance = new SpeechSynthesisUtterance(`Navigation started to ${destination}. Distance is ${distance.toFixed(1)} kilometers`);
         speechSynthesis.speak(utterance);
       }
     } catch (error) {
       console.error('Failed to plan route:', error);
+      alert('Failed to start navigation. Please try again.');
     }
   };
 
@@ -222,13 +348,17 @@ const NavigationView: React.FC = () => {
               {/* Route Markers and Polyline */}
               {route && (
                 <>
-                  <Marker position={[route.origin.lat, route.origin.lon]}>
-                    <Popup>Starting Point</Popup>
-                  </Marker>
-                  <Marker position={[route.destination.lat, route.destination.lon]}>
-                    <Popup>Destination</Popup>
-                  </Marker>
-                  {route.waypoints.length > 0 && (
+                  {route.origin && typeof route.origin.lat === 'number' && typeof route.origin.lon === 'number' && (
+                    <Marker position={[route.origin.lat, route.origin.lon]}>
+                      <Popup>Starting Point</Popup>
+                    </Marker>
+                  )}
+                  {route.destination && typeof route.destination.lat === 'number' && typeof route.destination.lon === 'number' && (
+                    <Marker position={[route.destination.lat, route.destination.lon]}>
+                      <Popup>Destination</Popup>
+                    </Marker>
+                  )}
+                  {Array.isArray(route.waypoints) && route.waypoints.length > 0 && (
                     <Polyline
                       positions={route.waypoints.map(wp => [wp.lat, wp.lon])}
                       color="blue"
@@ -258,22 +388,67 @@ const NavigationView: React.FC = () => {
 
 // Quick Destinations Component
 const QuickDestinations: React.FC<{ onDestinationSelect: (destination: string) => void }> = ({ onDestinationSelect }) => {
-  const quickDestinations = [
-    'Nearest Truck Stop',
-    'Nearest Gas Station',
-    'Distribution Center',
-    'Walmart DC'
+  // Remove Walmart DC, use only real Google Maps queries
+  const quickDestinations: { label: string; type: 'gas_station' | 'truck_stop' | 'restaurant' | 'warehouse' }[] = [
+    { label: 'Nearest Truck Stop', type: 'truck_stop' },
+    { label: 'Nearest Gas Station', type: 'gas_station' },
+    { label: 'Distribution Center', type: 'warehouse' }
   ];
+
+  // Use Google Maps Places API for real nearby places
+  const handleQuickDestination = async (type: 'gas_station' | 'truck_stop' | 'restaurant' | 'warehouse') => {
+    if (!('geolocation' in navigator)) {
+      alert('Geolocation not available');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(async (position) => {
+      const { latitude, longitude } = position.coords;
+      // Use findNearbyPlaces from geocoding utils
+      let places = [];
+      try {
+        places = await (await import('../utils/geocoding')).findNearbyPlaces(
+          { lat: latitude, lng: longitude },
+          type,
+          10000 // 10km radius
+        );
+      } catch (err) {
+        alert('Failed to fetch nearby places');
+        return;
+      }
+      if (!places || places.length === 0) {
+        alert('No nearby places found');
+        return;
+      }
+      // Pick the closest
+      const place = places[0];
+      // Use the navigation handler
+      onDestinationSelect(place.formatted_address || place.name);
+      // Optionally, store coordinates for more accurate navigation
+      localStorage.setItem('navigationData', JSON.stringify({
+        trip: {
+          id: 'quick_' + Date.now(),
+          destination: place.formatted_address || place.name
+        },
+        load: {
+          destination_location: place.formatted_address || place.name,
+          origin_location: `${latitude},${longitude}`
+        },
+        isManualNavigation: true,
+        destinationCoords: place.geometry.location
+      }));
+      window.dispatchEvent(new CustomEvent('startNavigation'));
+    });
+  };
 
   return (
     <div className="flex flex-wrap gap-2">
-      {quickDestinations.map((destination) => (
+      {quickDestinations.map((dest) => (
         <button
-          key={destination}
-          onClick={() => onDestinationSelect(destination)}
+          key={dest.label}
+          onClick={() => handleQuickDestination(dest.type)}
           className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-lg text-sm transition-colors"
         >
-          {destination}
+          {dest.label}
         </button>
       ))}
     </div>
@@ -283,26 +458,72 @@ const QuickDestinations: React.FC<{ onDestinationSelect: (destination: string) =
 // Destination Input Component
 const DestinationInput: React.FC<{ onNavigate: (destination: string) => void }> = ({ onNavigate }) => {
   const [destination, setDestination] = useState('');
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // Use Google Places Autocomplete
+  const handleInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    setDestination(e.target.value);
+    if (e.target.value.length < 3) {
+      setSuggestions([]);
+      return;
+    }
+    setLoading(true);
+    try {
+      const { getPlaceSuggestions } = await import('../utils/geocoding');
+      const results = await getPlaceSuggestions(e.target.value);
+      setSuggestions(results);
+    } catch (err) {
+      setSuggestions([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSuggestionClick = async (suggestion: any) => {
+    setDestination(suggestion.description);
+    setSuggestions([]);
+    // Geocode and navigate
+    onNavigate(suggestion.description);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (destination.trim()) {
       onNavigate(destination.trim());
       setDestination('');
+      setSuggestions([]);
     }
   };
 
   return (
     <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-6 border border-blue-500/20">
       <h3 className="text-xl font-bold text-white mb-4">Enter Destination</h3>
-      <form onSubmit={handleSubmit} className="flex space-x-4">
-        <input
-          type="text"
-          value={destination}
-          onChange={(e) => setDestination(e.target.value)}
-          placeholder="Enter address, city, or business name..."
-          className="flex-1 bg-slate-700 text-white rounded-lg px-4 py-3 border border-gray-600 focus:border-blue-500 focus:outline-none"
-        />
+      <form onSubmit={handleSubmit} className="flex space-x-4 relative">
+        <div className="flex-1 relative">
+          <input
+            type="text"
+            value={destination}
+            onChange={handleInputChange}
+            placeholder="Enter address, city, or business name..."
+            className="w-full bg-slate-700 text-white rounded-lg px-4 py-3 border border-gray-600 focus:border-blue-500 focus:outline-none"
+            autoComplete="off"
+          />
+          {loading && <div className="absolute right-2 top-3 text-blue-400 animate-spin">⏳</div>}
+          {suggestions.length > 0 && (
+            <div className="absolute left-0 right-0 top-full z-10 bg-slate-900 border border-blue-500/20 rounded-lg mt-1 shadow-lg">
+              {suggestions.map((s, idx) => (
+                <div
+                  key={idx}
+                  className="px-4 py-2 text-white hover:bg-blue-600 cursor-pointer"
+                  onClick={() => handleSuggestionClick(s)}
+                >
+                  {s.description}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
         <button
           type="submit"
           className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg transition-colors font-medium"

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { apiRequest } from '../utils/api';
+import { findNearbyPlaces, calculateDistance } from '../utils/geocoding';
 
 interface FuelData {
   fuel_level_percent: number;
@@ -13,9 +14,13 @@ interface FuelStation {
   distance_km: number;
   price_per_gallon?: number;
   amenities: string[];
+  coordinates?: { lat: number; lng: number };
+  rating?: number;
 }
 
 const FuelMonitoring: React.FC = () => {
+  const [selectedStation, setSelectedStation] = useState<FuelStation | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
   const [fuelData, setFuelData] = useState<FuelData | null>(null);
   const [nearbyStations, setNearbyStations] = useState<FuelStation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,6 +30,11 @@ const FuelMonitoring: React.FC = () => {
   useEffect(() => {
     getCurrentLocation();
     loadFuelData();
+    // Poll fuel data every 10 seconds
+    const interval = setInterval(() => {
+      loadFuelData();
+    }, 10000);
+    return () => clearInterval(interval);
   }, []);
 
   const getCurrentLocation = () => {
@@ -80,46 +90,106 @@ const FuelMonitoring: React.FC = () => {
 
   const loadNearbyStations = async (location: { lat: number; lon: number }) => {
     try {
-      const stations = await apiRequest(`/api/v1/fuel/nearest-station?lat=${location.lat}&lon=${location.lon}`);
-      setNearbyStations(stations);
+      // Use Google Places API to find real nearby fuel stations
+      const places = await findNearbyPlaces(
+        { lat: location.lat, lng: location.lon },
+        'gas_station',
+        5000 // 5km radius
+      );
+
+      // Convert to FuelStation format
+      const stations: FuelStation[] = places.map(place => ({
+        name: place.name,
+        address: place.formatted_address,
+        distance_km: place.distance || calculateDistance(
+          { lat: location.lat, lng: location.lon },
+          place.geometry.location
+        ),
+        price_per_gallon: 3.45 + Math.random() * 0.50, // Mock price
+        amenities: ['24/7', 'Restrooms', 'Snacks'], // Mock amenities
+        coordinates: place.geometry.location,
+        rating: place.rating
+      }));
+
+      // Sort by distance and take top 3
+      stations.sort((a, b) => a.distance_km - b.distance_km);
+      setNearbyStations(stations.slice(0, 3));
+
     } catch (error) {
       console.error('Failed to load nearby stations:', error);
-      // Simulated data for demo
+      // Fallback to mock data
       setNearbyStations([
         {
-          name: 'Shell Travel Plaza',
-          address: '123 Highway 75, Dallas, TX',
-          distance_km: 2.5,
-          price_per_gallon: 3.89,
-          amenities: ['Restaurant', 'Shower', 'Parking', 'WiFi']
+          name: 'Shell Station',
+          address: '123 Main St, Local City',
+          distance_km: 2.3,
+          price_per_gallon: 3.45,
+          amenities: ['24/7', 'Restrooms', 'ATM'],
+          coordinates: { lat: location.lat + 0.01, lng: location.lon + 0.01 },
+          rating: 4.2
         },
         {
-          name: 'Pilot Flying J',
-          address: '456 Interstate 35, Dallas, TX',
-          distance_km: 4.1,
-          price_per_gallon: 3.92,
-          amenities: ['Restaurant', 'Shower', 'Parking', 'Laundry']
+          name: 'BP Fuel Center',
+          address: '456 Highway Blvd, Local City',
+          distance_km: 3.1,
+          price_per_gallon: 3.52,
+          amenities: ['Diesel', 'Car Wash', 'Snacks'],
+          coordinates: { lat: location.lat - 0.01, lng: location.lon - 0.01 },
+          rating: 4.0
         },
         {
-          name: 'TA Travel Center',
-          address: '789 Highway 20, Dallas, TX',
-          distance_km: 6.8,
-          price_per_gallon: 3.85,
-          amenities: ['Restaurant', 'Shower', 'Parking', 'Store']
+          name: 'Exxon Express',
+          address: '789 State Route, Local City',
+          distance_km: 4.7,
+          price_per_gallon: 3.38,
+          amenities: ['24/7', 'Restrooms', 'Coffee'],
+          coordinates: { lat: location.lat + 0.02, lng: location.lon - 0.01 },
+          rating: 3.9
         }
       ]);
     }
   };
 
-  const navigateToStation = (station: FuelStation) => {
-    // Voice confirmation
+  const handleNavigateToStation = (station: FuelStation) => {
+    if (!station.coordinates) {
+      alert('Station coordinates not available');
+      return;
+    }
+    // Store navigation data for NavigationView
+    localStorage.setItem('navigationData', JSON.stringify({
+      trip: {
+        id: 'fuel_' + Date.now(),
+        destination: station.address,
+        destinationCoords: station.coordinates,
+        stationName: station.name
+      },
+      load: {
+        destination_location: station.address,
+        origin_location: currentLocation ? `${currentLocation.lat},${currentLocation.lon}` : 'Current Location'
+      },
+      isManualNavigation: true
+    }));
+    // Signal Dashboard to switch to navigation
+    window.dispatchEvent(new CustomEvent('startNavigation'));
+    // Voice feedback
     if ('speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance(`Navigating to ${station.name}`);
+      const utterance = new SpeechSynthesisUtterance(`Navigating to ${station.name}, ${station.distance_km.toFixed(1)} kilometers away`);
       speechSynthesis.speak(utterance);
     }
-    
-    // In a real app, this would trigger navigation
-    console.log('Navigating to:', station);
+  };
+
+  const navigateToStation = (station: FuelStation) => {
+    handleNavigateToStation(station);
+  };
+
+  const openDetailsModal = (station: FuelStation) => {
+    setSelectedStation(station);
+    setShowDetails(true);
+  };
+
+  const closeDetailsModal = () => {
+    setShowDetails(false);
+    setSelectedStation(null);
   };
 
   const getFuelLevelColor = (percentage: number) => {
@@ -135,65 +205,7 @@ const FuelMonitoring: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold text-white">Fuel Monitoring</h2>
-          <p className="text-blue-300">Track fuel levels and find stations</p>
-        </div>
-        <button
-          onClick={loadFuelData}
-          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors"
-        >
-          🔄 Refresh
-        </button>
-      </div>
-
-      {/* Fuel Alert */}
-      {fuelAlert && (
-        <div className="bg-red-500/20 border border-red-500/40 rounded-xl p-4 text-red-200">
-          <div className="flex items-center space-x-2">
-            <span className="text-xl">⛽</span>
-            <span className="font-medium">{fuelAlert}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Current Fuel Status */}
-      {loading ? (
-        <div className="text-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-          <p className="text-gray-400 mt-4">Loading fuel data...</p>
-        </div>
-      ) : fuelData && (
-        <div className={`bg-gradient-to-r ${getFuelLevelBg(fuelData.fuel_level_percent)} rounded-xl p-6 text-white`}>
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-2xl font-bold mb-2">Current Fuel Level</h3>
-              <div className="flex items-center space-x-4">
-                <div className="text-4xl font-bold">{fuelData.fuel_level_percent}%</div>
-                <div>
-                  <div className="text-lg">~{fuelData.estimated_range_miles} miles remaining</div>
-                  <div className="text-sm opacity-90">
-                    Last updated: {new Date(fuelData.last_updated_at).toLocaleTimeString()}
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="text-6xl">⛽</div>
-          </div>
-          
-          {/* Fuel Level Bar */}
-          <div className="mt-4 bg-white/20 rounded-full h-4 overflow-hidden">
-            <div
-              className="h-full bg-white/80 transition-all duration-500"
-              style={{ width: `${fuelData.fuel_level_percent}%` }}
-            ></div>
-          </div>
-        </div>
-      )}
-
+    <div className="relative space-y-6">
       {/* Fuel Efficiency Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard
@@ -228,10 +240,48 @@ const FuelMonitoring: React.FC = () => {
               key={index}
               station={station}
               onNavigate={() => navigateToStation(station)}
+              onDetails={() => openDetailsModal(station)}
             />
           ))}
         </div>
       </div>
+
+      {/* Details Modal (conditionally rendered inside parent div) */}
+      {showDetails && selectedStation && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
+          <div className="bg-slate-900 rounded-xl p-8 w-full max-w-md border border-blue-500/40 relative">
+            <button
+              className="absolute top-2 right-2 text-gray-400 hover:text-white text-xl"
+              onClick={closeDetailsModal}
+            >✖️</button>
+            <h3 className="text-2xl font-bold text-white mb-2">{selectedStation.name}</h3>
+            <p className="text-gray-300 mb-2">{selectedStation.address}</p>
+            <div className="flex items-center space-x-4 mb-2">
+              <span className="text-blue-300">📍 {selectedStation.distance_km.toFixed(1)} km away</span>
+              {selectedStation.price_per_gallon && (
+                <span className="text-green-300">💰 ${selectedStation.price_per_gallon.toFixed(2)}/gal</span>
+              )}
+              {selectedStation.rating && (
+                <span className="text-yellow-300">⭐ {selectedStation.rating.toFixed(1)}</span>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {(Array.isArray(selectedStation.amenities) ? selectedStation.amenities : []).map((amenity, idx) => (
+                <span key={idx} className="bg-blue-500/20 text-blue-200 px-2 py-1 rounded text-xs">{amenity}</span>
+              ))}
+            </div>
+            {selectedStation.coordinates && (
+              <div className="text-gray-400 text-xs mb-2">
+                Lat: {selectedStation.coordinates.lat}, Lng: {selectedStation.coordinates.lng}
+              </div>
+            )}
+            <button
+              className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium w-full"
+              onClick={() => { navigateToStation(selectedStation); closeDetailsModal(); }}
+            >🗺️ Navigate Here</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -267,7 +317,8 @@ const StatCard: React.FC<{
 const FuelStationCard: React.FC<{
   station: FuelStation;
   onNavigate: () => void;
-}> = ({ station, onNavigate }) => {
+  onDetails: () => void;
+}> = ({ station, onNavigate, onDetails }) => {
   return (
     <div className="bg-slate-700/50 rounded-lg p-4 border border-gray-600 hover:border-blue-500/40 transition-all duration-200">
       <div className="flex items-start justify-between">
@@ -280,7 +331,12 @@ const FuelStationCard: React.FC<{
             </span>
             {station.price_per_gallon && (
               <span className="text-green-300">
-                💰 ${station.price_per_gallon}/gal
+                💰 ${station.price_per_gallon.toFixed(2)}/gal
+              </span>
+            )}
+            {station.rating && (
+              <span className="text-yellow-300">
+                ⭐ {station.rating.toFixed(1)}
               </span>
             )}
           </div>
@@ -303,7 +359,10 @@ const FuelStationCard: React.FC<{
           >
             🗺️ Navigate
           </button>
-          <button className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium">
+          <button
+            onClick={onDetails}
+            className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+          >
             ℹ️ Details
           </button>
         </div>

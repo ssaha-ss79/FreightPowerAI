@@ -28,6 +28,17 @@ const Dashboard: React.FC = () => {
     // Load user data and initialize dashboard
     loadUserData();
     loadAlerts();
+    
+    // Listen for navigation start event from LoadManagement
+    const handleStartNavigation = () => {
+      setActiveModule('navigation');
+    };
+    
+    window.addEventListener('startNavigation', handleStartNavigation);
+    
+    return () => {
+      window.removeEventListener('startNavigation', handleStartNavigation);
+    };
   }, [navigate]);
 
   const loadUserData = async () => {

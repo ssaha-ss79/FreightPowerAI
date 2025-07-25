@@ -5,17 +5,21 @@ const prisma = new PrismaClient();
 // Document Management Service
 const uploadDocument = async (req: Request, res: Response) => {
   try {
-    const { driver_id, trip_id, type, filename, storage_url, tags, uploaded_at } = req.body;
-    console.log('[DOCUMENTS] uploadDocument called:', { driver_id, trip_id, type, filename });
-    
-    if (!driver_id || !type || !filename || !storage_url || !uploaded_at) {
-      return res.status(400).json({ error: 'Missing required fields: driver_id, type, filename, storage_url, uploaded_at' });
+    // File info from multer
+    const file = (req as any).file;
+    const { driver_id, trip_id, type, tags } = req.body;
+    const uploaded_at = new Date().toISOString();
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
     }
-    
+    if (!driver_id || !type) {
+      return res.status(400).json({ error: 'Missing required fields: driver_id, type' });
+    }
+    const filename = file.originalname;
+    const storage_url = file.path;
     const document = await prisma.document.create({
       data: { driver_id, trip_id, type, filename, storage_url, tags, uploaded_at },
     });
-    
     console.log('[DOCUMENTS] Document uploaded successfully');
     res.status(201).json({ status: 'success', document });
   } catch (err) {
@@ -68,13 +72,13 @@ const getDocument = async (req: Request, res: Response) => {
     const document = await prisma.document.findUnique({
       where: { id }
     });
-    
     if (!document) {
       return res.status(404).json({ error: 'Document not found' });
     }
-    
+    // Add direct file URL for preview/download
+    const fileUrl = `/api/v1/documents/file/${document.storage_url.split('/').pop()}`;
     console.log('[DOCUMENTS] Document retrieved successfully');
-    res.json({ status: 'success', document });
+    res.json({ status: 'success', document: { ...document, fileUrl } });
   } catch (err) {
     console.error('[DOCUMENTS] Error getting document:', err);
     res.status(500).json({ 

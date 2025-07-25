@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiRequest } from '../utils/api';
 
 // Custom hook to force re-render on localStorage changes (user_id/role), with polling fallback
@@ -40,6 +41,8 @@ interface Load {
 }
 
 const LoadManagement: React.FC = () => {
+  const navigate = useNavigate();
+  
   // Force re-render when user_id or role changes
   useLocalStorage(['user_id', 'role']);
   // Debug: log user_id and role on every render
@@ -47,6 +50,37 @@ const LoadManagement: React.FC = () => {
   const userRole = localStorage.getItem('role') || '';
   console.log('[LoadManagement] Render: user_id =', userId, ', role =', userRole);
   console.log('[LoadManagement] Add Load button visible check:', userRole === 'dispatcher' || userRole === 'admin', '(dispatcher check:', userRole === 'dispatcher', ', admin check:', userRole === 'admin', ')');
+  
+  const handleNavigate = async (load: Load) => {
+    try {
+      // Create a trip for this load
+      const tripResponse = await apiRequest('/api/v1/trips', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+      load_id: load.id,
+      driver_id: userId,
+      origin: load.origin_location,
+      destination: load.destination_location,
+      status: 'active'
+})
+      });
+      
+      // Store navigation data in localStorage for NavigationView to access
+      localStorage.setItem('navigationData', JSON.stringify({
+        trip: tripResponse,
+        load: load
+      }));
+      
+      // Signal to parent Dashboard to switch to navigation module
+      window.dispatchEvent(new CustomEvent('startNavigation'));
+      
+    } catch (error) {
+      console.error('Failed to create trip for navigation:', error);
+      alert('Failed to start navigation. Please try again.');
+    }
+  };
+
   const handleAddLoad = async () => {
     console.log('[LoadManagement] handleAddLoad: user_id =', userId, ', role =', userRole);
     try {
@@ -225,6 +259,7 @@ const LoadManagement: React.FC = () => {
               onBook={() => bookLoad(load.id)}
               onCancel={() => cancelLoad(load.id)}
               onDetails={() => setSelectedLoad(load)}
+              onNavigate={() => handleNavigate(load)}
             />
           ))
         )}
@@ -310,7 +345,8 @@ const LoadCard: React.FC<{
   onBook: () => void;
   onCancel: () => void;
   onDetails: () => void;
-}> = ({ load, onBook, onCancel, onDetails }) => {
+  onNavigate: () => void;
+}> = ({ load, onBook, onCancel, onDetails, onNavigate }) => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'available': return 'text-green-400 bg-green-400/10';
@@ -380,7 +416,10 @@ const LoadCard: React.FC<{
               >
                 ❌ Cancel
               </button>
-              <button className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors font-medium">
+              <button 
+                onClick={onNavigate}
+                className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors font-medium"
+              >
                 🗺️ Navigate
               </button>
             </>

@@ -1,3 +1,5 @@
+require('dotenv').config();
+import mapsRoutes from './routes/maps';
 import { Request, Response, NextFunction } from 'express';
 const express = require('express');
 const cors = require('cors');
@@ -30,11 +32,14 @@ app.use(express.json());
 
 // Health check (public)
 app.get('/health', (req: Request, res: Response) => res.json({ status: 'ok' }));
+// Google Maps proxy routes (public)
+app.use('/api/maps', mapsRoutes);
+
+// Health check (public)
+app.get('/health', (req: Request, res: Response) => res.json({ status: 'ok' }));
 
 // Auth routes (public)
 app.use('/auth', authRoutes);
-
-
 // User routes (public registration only)
 app.use('/users', userRoutes);
 
