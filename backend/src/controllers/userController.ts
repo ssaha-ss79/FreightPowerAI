@@ -77,4 +77,26 @@ const getUserById = async (req: Request, res: Response) => {
   res.json(user);
 };
 
-export { register, getUserProfile, getAllUsers, getUserById };
+const getAssistantSummary = async (req: Request, res: Response) => {
+  try {
+    // Optionally, filter by driver_id if needed (e.g., req.user?.userId)
+    const [loads, trips, documents, notifications, emergencies] = await Promise.all([
+      prisma.load.count(),
+      prisma.trip.count({ where: { status: { not: 'completed' } } }),
+      prisma.document.count(),
+      prisma.notification.count(),
+      prisma.emergencyLog.count()
+    ]);
+    res.json({
+      loads_count: loads,
+      trips_count: trips,
+      documents_count: documents,
+      notifications_count: notifications,
+      emergency_count: emergencies
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get assistant summary' });
+  }
+};
+
+export { register, getUserProfile, getAllUsers, getUserById, getAssistantSummary };

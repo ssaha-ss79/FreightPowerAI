@@ -17,6 +17,7 @@ import dispatchRoutes from './routes/dispatch';
 import emergencyRoutes from './routes/emergency';
 import routeRoutes from './routes/route';
 import fuelRoutes from './routes/fuel';
+import { getAssistantSummary } from './controllers/userController';
 const { authenticateToken } = require('./middleware/auth');
 const errorHandler = require('./middleware/errorHandler');
 const { initSocket } = require('./websocket/socket');
@@ -42,6 +43,9 @@ app.get('/health', (req: Request, res: Response) => res.json({ status: 'ok' }));
 app.use('/auth', authRoutes);
 // User routes (public registration only)
 app.use('/users', userRoutes);
+
+// Assistant summary route (protected, but can be moved above auth if needed)
+app.get('/api/v1/assistant/summary', authenticateToken, getAssistantSummary);
 
 // Protect all routes below this middleware
 app.use(authenticateToken);
